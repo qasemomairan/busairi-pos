@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
+<title>بنك البسيري | نظام تحليل أخطاء POS الذكي</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<script src="https://unpkg.com/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
+<!-- Firebase SDKs (compat version) -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Cairo', sans-serif; }
+    :root {
+        --bg-gradient-start: #0b2b5c; --bg-gradient-mid: #123e7c; --bg-gradient-end: #1b4d8c;
+        --card-bg: rgba(15, 35, 65, 0.7); --text-gold: #FFE2A4; --text-gold-dark: #FFD966;
+        --text-gold-bright: #FFF2D7; --input-bg: rgba(255,255,255,0.95); --input-color: #0a2f44;
+        --border-light: rgba(255,255,255,0.2); --btn-primary-bg: linear-gradient(95deg,#F6B93D,#FF8C42);
+        --btn-primary-color: #1e2f47; --algorithm-bg: rgba(0,0,0,0.4); --user-card-bg: rgba(10,25,55,0.75);
+        --footer-color: #cfdfed; --dropdown-bg: rgba(15,35,65,0.9);
+    }
+    body.dark {
+        --bg-gradient-start: #121212; --bg-gradient-mid: #1e1e2f; --bg-gradient-end: #2a2a3a;
+        --card-bg: rgba(20,20,35,0.85); --text-gold: #FFD966; --text-gold-dark: #FFC107;
+        --input-bg: rgba(50,50,70,0.95); --input-color: #f0f0f0; --border-light: rgba(255,215,130,0.3);
+        --btn-primary-bg: linear-gradient(95deg,#FFB347,#FF8C42); --btn-primary-color: #ffffff;
+        --algorithm-bg: rgba(0,0,0,0.6); --user-card-bg: rgba(30,30,50,0.85); --footer-color: #a0a0b0;
+        --dropdown-bg: rgba(30,30,50,0.95);
+    }
+    body {
+        min-height: 100vh;
+        background: linear-gradient(145deg, var(--bg-gradient-start) 0%, var(--bg-gradient-mid) 50%, var(--bg-gradient-end) 100%);
+        display: flex; align-items: center; justify-content: center; padding: 1rem;
+        transition: background 0.3s ease; color: var(--text-gold);
+    }
+    .glass-card {
+        background: var(--card-bg); backdrop-filter: blur(14px); border-radius: 2rem;
+        width: 100%; max-width: 720px; padding: 1.5rem;
+        box-shadow: 0 25px 45px rgba(0,0,0,0.3); border: 1px solid var(--border-light);
+    }
+    .brand { text-align: center; margin-bottom: 1.2rem; position: relative; }
+    .brand i { font-size: 2.5rem; background: linear-gradient(135deg,var(--text-gold-bright),var(--text-gold-dark)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .brand h2 { font-size: 1.6rem; font-weight: 800; background: linear-gradient(to left,var(--text-gold-bright),var(--text-gold-dark)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .theme-toggle {
+        position: absolute; top: 0.5rem; left: 0.5rem;
+        background: rgba(0,0,0,0.4); border: none; border-radius: 2rem;
+        padding: 0.4rem 0.8rem; color: var(--text-gold-dark); cursor: pointer;
+        font-size: 0.8rem; z-index: 10;
+    }
+    .input-field, select, textarea {
+        width: 100%; padding: 0.8rem; margin: 0.5rem 0; border: none;
+        border-radius: 2rem; background: var(--input-bg); color: var(--input-color);
+        font-size: 1rem; text-align: center; transition: 0.2s;
+    }
+    .input-field:focus, select:focus, textarea:focus {
+        outline: none; transform: scale(0.98); box-shadow: 0 0 0 2px var(--text-gold-dark);
+    }
+    .btn-primary, .btn-secondary, .small-btn {
+        border: none; border-radius: 2rem; padding: 0.8rem; font-weight: bold;
+        cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-primary { background: var(--btn-primary-bg); color: var(--btn-primary-color); width: 100%; }
+    .btn-secondary { background: rgba(255,255,240,0.18); border: 1px solid var(--text-gold-dark); color: var(--text-gold); width: 100%; }
+    .small-btn { background: #FFB347; color: #1e2f47; padding: 0.5rem 1rem; }
+    .navbar-dropdown { margin: 1rem 0; position: relative; width: 100%; }
+    .dropdown-select {
+        width: 100%; padding: 0.8rem 1rem; background: var(--dropdown-bg);
+        border: 1px solid var(--text-gold-dark); border-radius: 2rem;
+        color: var(--text-gold); font-size: 1rem; font-weight: 600; cursor: pointer;
+        appearance: none; -webkit-appearance: none;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23FFD966' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>");
+        background-repeat: no-repeat; background-position: left 1rem center;
+        background-size: 1rem; text-align: center;
+    }
+    .tab-content { display: none; animation: fade 0.2s ease; margin-top: 0.5rem; }
+    .tab-content.active { display: block; }
+    @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+    .user-card, .log-entry, .error-card {
+        background: var(--user-card-bg); border-radius: 1rem; padding: 0.7rem; margin-bottom: 0.6rem;
+        display: flex; justify-content: space-between; flex-wrap: wrap; align-items: center; gap: 8px;
+        border-right: 3px solid var(--text-gold-dark); color: var(--text-gold);
+    }
+    .algorithm-box {
+        background: var(--algorithm-bg); border-radius: 1.5rem; padding: 1rem; margin: 1rem 0;
+        text-align: center; border: 1px solid var(--text-gold-dark);
+    }
+    .result-number {
+        font-size: 2.5rem; font-weight: 800; letter-spacing: 3px;
+        background: linear-gradient(130deg, var(--text-gold-bright), var(--text-gold-dark));
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+        direction: ltr;
+    }
+    .copy-btn { background: #2c7a47; color: white; border: none; border-radius: 2rem; padding: 0.3rem 1rem; margin-top: 0.5rem; cursor: pointer; }
+    .flex-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .grid-form {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 0.8rem;
+        align-items: end;
+        margin: 1rem 0;
+    }
+    .grid-form .input-field { margin: 0; }
+    .grid-full { grid-column: span 3; }
+    .hidden { display: none; }
+    .footer-note { text-align: center; font-size: 0.7rem; margin-top: 1rem; color: var(--footer-color); }
+    @media (max-width: 600px) {
+        .glass-card { padding: 1rem; }
+        .grid-form { grid-template-columns: 1fr; gap: 0.5rem; }
+        .grid-full { grid-column: span 1; }
+        .result-number { font-size: 1.8rem; }
+    }
+    .camera-preview { width: 100%; border-radius: 1rem; margin: 0.5rem 0; background: #000; }
+    .captured-img { max-width: 100%; border-radius: 1rem; margin-top: 0.5rem; }
+    .solution-box {
+        background: rgba(0,0,0,0.4); border-radius: 1rem; padding: 0.8rem;
+        margin-top: 1rem; border-right: 3px solid #2c7a47;
+    }
+    .ocr-status { font-size: 0.8rem; color: var(--text-gold); margin-top: 0.5rem; }
+    .section-title {
+        font-weight: 700; margin-bottom: 0.8rem; display: flex; align-items: center; gap: 8px;
+        color: var(--text-gold);
+    }
+</style>
+</head>
+<body>
+
+<div class="glass-card" id="loginBox">
+    <button class="theme-toggle" id="themeToggle"><i class="fas fa-moon"></i> الوضع</button>
+    <div class="brand"><i class="fas fa-landmark"></i><h2>بنك البسيري الدولي</h2><p>نظام تحليل أخطاء POS الذكي (سحابي)</p></div>
+    <input type="text" id="loginUsername" class="input-field" placeholder="اسم المستخدم">
+    <input type="password" id="loginPassword" class="input-field" placeholder="كلمة المرور">
+    <button class="btn-primary" onclick="login()"><i class="fas fa-sign-in-alt"></i> دخول</button>
+    <div class="footer-note">© 2026 بنك البسيري الدولي - جميع الحقوق محفوظة | جاسم عميران</div>
+</div>
+
+<div class="glass-card hidden" id="appBox">
+    <button class="theme-toggle" id="themeToggleApp"><i class="fas fa-moon"></i> الوضع</button>
+    <div class="brand"><i class="fas fa-chart-line"></i><h2 id="appTitle">بسيري Pay</h2><div class="welcome-badge" id="userRoleBadge"></div></div>
+
+    <div class="navbar-dropdown" id="navbarDropdownContainer" style="display: none;">
+        <select id="navSelect" class="dropdown-select"></select>
+    </div>
+
+    <div id="tabAlgorithm" class="tab-content">
+        <div class="algorithm-box">
+            <div class="algorithm-label"><i class="fas fa-shield-alt"></i> رمز التحقق الآمن</div>
+            <div class="result-number" id="output">----</div>
+            <button id="copyCodeBtn" class="copy-btn" onclick="copyCode()"><i class="fas fa-copy"></i> نسخ الرمز</button>
+            <div class="algorithm-sub" style="margin-top:8px; font-size:0.7rem;"><i class="fas fa-key"></i> كلمة السر لدخول نظـام الإعدادات 00028510</div>
+        </div>
+    </div>
+
+    <div id="tabChangePass" class="tab-content">
+        <div style="background: rgba(0,0,0,0.3); border-radius:1.5rem; padding:1rem;">
+            <div class="section-title"><i class="fas fa-key"></i> تغيير كلمة المرور</div>
+            <input type="password" id="oldPass" class="input-field" placeholder="كلمة المرور الحالية">
+            <input type="password" id="newPass" class="input-field" placeholder="كلمة المرور الجديدة">
+            <button class="small-btn" style="width:100%;" onclick="changePassword()">تغيير</button>
+        </div>
+    </div>
+
+    <div id="tabUsers" class="tab-content">
+        <div class="section-title"><i class="fas fa-users"></i> إدارة المستخدمين</div>
+        <div id="usersDiv" style="max-height: 250px; overflow-y: auto;"></div>
+        <div id="addUserForm" class="hidden" style="margin-top:1rem;">
+            <div class="grid-form">
+                <input type="text" id="newUserName" class="input-field" placeholder="اسم المستخدم">
+                <select id="newUserRole" class="input-field">
+                    <option value="user">👤 مستخدم</option>
+                    <option value="cashier">🛒 كاشير</option>
+                    <option value="admin">👑 مدير</option>
+                </select>
+                <input type="password" id="newUserPass" class="input-field" placeholder="كلمة المرور">
+                <button class="small-btn grid-full" onclick="addUser()">➕ إضافة مستخدم</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="tabLogs" class="tab-content">
+        <div class="section-title"><i class="fas fa-history"></i> سجل العمليات <button class="small-btn" style="padding:0.2rem 0.8rem;" onclick="clearLogs()">مسح</button></div>
+        <div id="logsDiv" style="max-height: 250px; overflow-y: auto;"></div>
+    </div>
+
+    <div id="tabCashierPerms" class="tab-content">
+        <div class="section-title"><i class="fas fa-user-tag"></i> صلاحيات الكاشير</div>
+        <div id="cashierPermissionsPanel" style="background: rgba(0,0,0,0.3); border-radius:1.5rem; padding:1rem;">
+            <div id="cashiersList"></div>
+        </div>
+    </div>
+
+    <div id="tabErrors" class="tab-content">
+        <div class="section-title"><i class="fas fa-bug"></i> إدارة الأخطاء والردود</div>
+        <div id="errorsList" style="max-height: 200px; overflow-y: auto; margin-bottom:1rem;"></div>
+        <div id="addErrorForm" class="hidden">
+            <input type="text" id="errorProblem" class="input-field" placeholder="وصف المشكلة (مثال: Insufficient funds)">
+            <textarea id="errorSolution" class="input-field" rows="2" placeholder="الرد الصحيح (مثال: لا يوجد رصيد كافٍ لدى العميل)"></textarea>
+            <button class="small-btn" onclick="addError()">إضافة خطأ</button>
+        </div>
+    </div>
+
+    <div id="tabCamera" class="tab-content">
+        <div class="section-title"><i class="fas fa-camera"></i> تصوير الإشعار وتحليل المستند</div>
+        <div id="cameraArea">
+            <video id="video" autoplay playsinline class="camera-preview"></video>
+            <div class="flex-row">
+                <button class="small-btn" id="captureBtn" onclick="capturePhoto()"><i class="fas fa-camera"></i> تصوير</button>
+                <button class="small-btn" id="switchCamBtn" onclick="switchCamera()"><i class="fas fa-sync-alt"></i> تبديل الكاميرا</button>
+            </div>
+            <canvas id="canvas" style="display:none;"></canvas>
+            <img id="capturedImage" class="captured-img hidden" alt="الصورة الملتقطة">
+        </div>
+        <div id="analysisArea" class="hidden" style="margin-top:1rem;">
+            <div class="ocr-status" id="ocrStatus"></div>
+            <div id="analysisResult" class="solution-box hidden"></div>
+        </div>
+    </div>
+
+    <button class="btn-secondary" onclick="logout()"><i class="fas fa-power-off"></i> تسجيل الخروج</button>
+    <div class="footer-note">© 2026 بنك البسيري الدولي - جميع الحقوق محفوظة | جاسم عميران</div>
+</div>
+
+<script>
+    // ------------------ إعدادات Firebase (تم استبدالها بالقيم الصحيحة) ------------------
+    const firebaseConfig = {
+        apiKey: "AIzaSyD1MIhzfSag7_QpV5rE0lvOmm9oTuHeccA",
+        authDomain: "busairi-pos.firebaseapp.com",
+        databaseURL: "https://busairi-pos-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "busairi-pos",
+        storageBucket: "busairi-pos.firebasestorage.app",
+        messagingSenderId: "907002114739",
+        appId: "1:907002114739:web:25d7c99d4b69de8956b6c6",
+        measurementId: "G-DWQPS7HWTJ"
+    };
+    // تهيئة Firebase (compat)
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
+    // ------------------ متغيرات عامة ------------------
+    let currentUser = null;
+    let currentStream = null;
+    let currentCamera = 'environment';
+
+    // ------------------ دوال Firebase ------------------
+    async function getUsers() {
+        const snapshot = await database.ref('users').once('value');
+        const usersObj = snapshot.val() || {};
+        return Object.keys(usersObj).map(key => ({ ...usersObj[key], id: key }));
+    }
+
+    async function saveUsers(users) {
+        const usersObj = {};
+        users.forEach(user => {
+            usersObj[user.id || user.u] = user;
+        });
+        await database.ref('users').set(usersObj);
+    }
+
+    async function addLog(action, details) {
+        const logEntry = {
+            time: new Date().toLocaleString('ar-EG'),
+            action,
+            details
+        };
+        await database.ref('logs').push(logEntry);
+        if (document.getElementById("tabLogs").classList.contains("active")) renderLogs();
+    }
+
+    async function getLogs() {
+        const snapshot = await database.ref('logs').once('value');
+        const logsObj = snapshot.val() || {};
+        return Object.values(logsObj).reverse();
+    }
+
+    async function clearLogs() {
+        await database.ref('logs').remove();
+        addLog("مسح السجل", "تم مسح جميع السجلات");
+        renderLogs();
+    }
+
+    async function getPermissions() {
+        const snapshot = await database.ref('permissions').once('value');
+        return snapshot.val() || {};
+    }
+
+    async function savePermissions(perms) {
+        await database.ref('permissions').set(perms);
+    }
+
+    async function getErrors() {
+        const snapshot = await database.ref('errors').once('value');
+        const errorsObj = snapshot.val() || {};
+        return Object.values(errorsObj);
+    }
+
+    async function saveErrors(errors) {
+        const errorsObj = {};
+        errors.forEach(err => { errorsObj[err.id] = err; });
+        await database.ref('errors').set(errorsObj);
+    }
+
+    // ------------------ دوال إعداد البيانات الأولية ------------------
+    const POS_ERRORS = [
+        { problem: "Insufficient funds", solution: "لا يوجد رصيد كافٍ لدى العميل، يرجى إعلامه بتعبئة الرصيد" },
+        { problem: "Card declined", solution: "البطاقة مرفوضة من البنك المصدر، يُرجى استخدام بطاقة أخرى" },
+        { problem: "Invalid PIN", solution: "الرقم السري غير صحيح، اطلب من العميل إعادة المحاولة أو تغيير الرقم السري" },
+        { problem: "Expired card", solution: "البطاقة منتهية الصلاحية، اطلب من العميل استخدام بطاقة سارية" },
+        { problem: "Card not supported", solution: "نوع البطاقة غير مدعوم في هذا الجهاز، جرب بطاقة أخرى" },
+        { problem: "Transaction timeout", solution: "انتهت مهلة العملية، أعد المحاولة بعد قليل" },
+        { problem: "Connection error", solution: "خطأ في الاتصال بالشبكة، تحقق من اتصال الجهاز بالإنترنت" },
+        { problem: "Amount exceeds limit", solution: "المبلغ المطلوب يتجاوز الحد الأقصى المسموح به للعملية الواحدة" },
+        { problem: "Daily limit exceeded", solution: "تم تجاوز الحد اليومي للعمليات، سيتم إعادة تعيين الحد غداً" },
+        { problem: "Fraud detected", solution: "تم اكتشاف نشاط احتيالي، يرجى الاتصال بالدعم الفني" },
+        { problem: "Technical error", solution: "خطأ تقني في النظام، أعد تشغيل الجهاز أو اتصل بالدعم" },
+        { problem: "Card not inserted", solution: "لم يتم إدخال البطاقة بشكل صحيح، أعد إدخالها" },
+        { problem: "PIN tries exceeded", solution: "تم تجاوز عدد المحاولات المسموحة للرقم السري، البطاقة محظورة مؤقتاً" },
+        { problem: "Invalid card", solution: "البطاقة غير صالحة أو تالفة، اطلب بطاقة بديلة" },
+        { problem: "Merchant error", solution: "خطأ في إعدادات التاجر، تواصل مع الدعم الفني" },
+        { problem: "Declined by issuer", solution: "البنك المصدر رفض العملية، يرجى الاتصال بالبنك" }
+    ];
+
+    async function initFirebaseData() {
+        let users = await getUsers();
+        if (users.length === 0) {
+            const defaultUsers = [
+                { u: "admin", role: "admin", password: "admin123", lastLogin: "لم يسجل بعد" },
+                { u: "cashier1", role: "cashier", password: "1234", lastLogin: "لم يسجل بعد" },
+                { u: "user1", role: "user", password: "1234", lastLogin: "لم يسجل بعد" }
+            ];
+            await saveUsers(defaultUsers);
+        }
+        let errors = await getErrors();
+        if (errors.length === 0) {
+            const errorsWithId = POS_ERRORS.map((e, idx) => ({ id: idx.toString(), problem: e.problem, solution: e.solution }));
+            await saveErrors(errorsWithId);
+        }
+        let perms = await getPermissions();
+        if (Object.keys(perms).length === 0) {
+            await savePermissions({ cashier1: { canUseCamera: true, showAlgo: true } });
+        }
+    }
+
+    // ------------------ دوال التطبيق الرئيسية ------------------
+    async function login() {
+        let username = document.getElementById("loginUsername").value.trim();
+        let password = document.getElementById("loginPassword").value;
+        if (!username) { alert("أدخل اسم المستخدم"); return; }
+        let users = await getUsers();
+        let user = users.find(u => u.u === username);
+        if (!user) {
+            user = { u: username, role: "user", password: "1234", lastLogin: "لم يسجل بعد" };
+            users.push(user);
+            await saveUsers(users);
+            await addLog("مستخدم جديد", `تم إنشاء ${username} بكلمة مرور 1234`);
+        }
+        if (user.password !== password) {
+            await addLog("محاولة دخول فاشلة", `${username} - كلمة مرور خاطئة`);
+            alert("كلمة المرور غير صحيحة");
+            return;
+        }
+        user.lastLogin = new Date().toLocaleString('ar-EG');
+        await saveUsers(users);
+        await addLog("دخول ناجح", `${username} (${user.role})`);
+        sessionStorage.setItem("currentUser", JSON.stringify(user));
+        showApp(user);
+    }
+
+    async function showApp(user) {
+        currentUser = user;
+        document.getElementById("loginBox").classList.add("hidden");
+        document.getElementById("appBox").classList.remove("hidden");
+
+        document.getElementById("appTitle").innerHTML = user.role === "admin" ? '<i class="fas fa-crown"></i> لوحة المدير' : (user.role === "cashier" ? '<i class="fas fa-cash-register"></i> نظام الكاشير' : '<i class="fas fa-qrcode"></i> نظام نقاط البيع');
+        document.getElementById("userRoleBadge").innerHTML = user.role === "admin" ? "👑 مدير النظام" : (user.role === "cashier" ? "🛒 كاشير" : "👤 مستخدم عادي");
+
+        let availableTabs = [
+            { id: "tabAlgorithm", name: "رمز التحقق", icon: "fas fa-shield-alt" },
+            { id: "tabChangePass", name: "تغيير كلمة السر", icon: "fas fa-key" }
+        ];
+
+        if (user.role === "admin") {
+            availableTabs.push(
+                { id: "tabUsers", name: "المستخدمين", icon: "fas fa-users" },
+                { id: "tabLogs", name: "السجل", icon: "fas fa-history" },
+                { id: "tabCashierPerms", name: "صلاحيات الكاشير", icon: "fas fa-user-tag" },
+                { id: "tabErrors", name: "الأخطاء والردود", icon: "fas fa-bug" },
+                { id: "tabCamera", name: "كاميرا (تجريبي)", icon: "fas fa-camera" }
+            );
+        } else if (user.role === "cashier") {
+            let perms = await getPermissions();
+            let userPerms = perms[user.u] || { canUseCamera: false, showAlgo: true };
+            if (userPerms.canUseCamera) {
+                availableTabs.push({ id: "tabCamera", name: "تصوير الإشعار", icon: "fas fa-camera" });
+            }
+        }
+
+        const navSelect = document.getElementById("navSelect");
+        navSelect.innerHTML = "";
+        availableTabs.forEach(tab => {
+            let option = document.createElement("option");
+            option.value = tab.id;
+            option.innerHTML = `<i class="${tab.icon}"></i> ${tab.name}`;
+            navSelect.appendChild(option);
+        });
+        document.getElementById("navbarDropdownContainer").style.display = "block";
+        navSelect.onchange = (e) => switchTab(e.target.value);
+
+        if (availableTabs.length > 0) switchTab(availableTabs[0].id);
+
+        if (user.role === "admin") {
+            document.getElementById("addUserForm").classList.remove("hidden");
+            document.getElementById("addErrorForm").classList.remove("hidden");
+            await renderUsersList();
+            await renderLogs();
+            await renderCashierPermissions();
+            await renderErrorsList();
+        } else {
+            document.getElementById("addUserForm").classList.add("hidden");
+            document.getElementById("addErrorForm").classList.add("hidden");
+        }
+
+        startAlgorithm();
+
+        if (user.role === "cashier") {
+            let perms = await getPermissions();
+            let userPerms = perms[user.u] || { canUseCamera: false, showAlgo: true };
+            let outputDiv = document.getElementById("output");
+            let copyBtn = document.getElementById("copyCodeBtn");
+            if (!userPerms.showAlgo) {
+                outputDiv.style.display = "none";
+                copyBtn.style.display = "none";
+            } else {
+                outputDiv.style.display = "block";
+                copyBtn.style.display = "inline-block";
+            }
+            if (userPerms.canUseCamera) initCamera();
+            else if (currentStream) { currentStream.getTracks().forEach(t => t.stop()); document.getElementById("video").classList.add("hidden"); }
+        } else {
+            document.getElementById("output").style.display = "block";
+            document.getElementById("copyCodeBtn").style.display = "inline-block";
+        }
+    }
+
+    function switchTab(tabId) {
+        document.querySelectorAll(".tab-content").forEach(t => t.classList.remove("active"));
+        document.getElementById(tabId).classList.add("active");
+        const navSelect = document.getElementById("navSelect");
+        if (navSelect) navSelect.value = tabId;
+    }
+
+    async function renderUsersList() {
+        let users = await getUsers();
+        let container = document.getElementById("usersDiv");
+        container.innerHTML = users.map(u => `
+            <div class="user-card">
+                <div><i class="fas fa-user-circle"></i> ${escapeHtml(u.u)} | ${u.role === 'admin' ? 'مدير' : (u.role === 'cashier' ? 'كاشير' : 'مستخدم')}<br><small>آخر دخول: ${u.lastLogin}</small></div>
+                ${u.role !== 'admin' ? `<button class="small-btn" onclick="deleteUser('${escapeHtml(u.u)}')"><i class="fas fa-trash"></i> حذف</button>` : '<span><i class="fas fa-lock"></i> أساسي</span>'}
+            </div>
+        `).join("");
+    }
+
+    async function addUser() {
+        let name = document.getElementById("newUserName").value.trim();
+        let role = document.getElementById("newUserRole").value;
+        let pass = document.getElementById("newUserPass").value.trim();
+        if (!name) { alert("أدخل الاسم"); return; }
+        if (!pass) pass = "1234";
+        let users = await getUsers();
+        if (users.find(u => u.u === name)) { alert("المستخدم موجود"); return; }
+        users.push({ u: name, role: role, password: pass, lastLogin: "لم يسجل بعد" });
+        await saveUsers(users);
+        if (role === "cashier") {
+            let perms = await getPermissions();
+            perms[name] = { canUseCamera: false, showAlgo: true };
+            await savePermissions(perms);
+        }
+        document.getElementById("newUserName").value = "";
+        document.getElementById("newUserPass").value = "";
+        await renderUsersList();
+        await renderCashierPermissions();
+        await addLog("إضافة مستخدم", `تم إضافة ${name} (${role})`);
+        alert(`✅ تم إضافة ${name} بكلمة مرور: ${pass}`);
+    }
+
+    window.deleteUser = async function(username) {
+        let users = await getUsers();
+        let target = users.find(u => u.u === username);
+        if (!target || target.role === "admin") { alert("لا يمكن حذف المدير"); return; }
+        if (confirm(`حذف ${username} نهائياً؟`)) {
+            users = users.filter(u => u.u !== username);
+            await saveUsers(users);
+            let perms = await getPermissions();
+            delete perms[username];
+            await savePermissions(perms);
+            await renderUsersList();
+            await renderCashierPermissions();
+            await addLog("حذف مستخدم", `تم حذف ${username}`);
+            if (currentUser && currentUser.u === username) logout();
+        }
+    };
+
+    async function renderCashierPermissions() {
+        let users = await getUsers();
+        let cashiers = users.filter(u => u.role === "cashier");
+        let perms = await getPermissions();
+        let container = document.getElementById("cashiersList");
+        if (cashiers.length === 0) { container.innerHTML = "<p>لا يوجد كاشير</p>"; return; }
+        container.innerHTML = cashiers.map(c => {
+            let p = perms[c.u] || { canUseCamera: false, showAlgo: true };
+            return `
+                <div class="user-card" style="flex-direction:column; align-items:stretch;">
+                    <div><strong>${escapeHtml(c.u)}</strong></div>
+                    <label style="color:var(--text-gold);"><input type="checkbox" id="cam_${c.u}" ${p.canUseCamera ? "checked" : ""} onchange="updateCashierPerm('${c.u}', 'canUseCamera', this.checked)"> <i class="fas fa-camera"></i> استخدام الكاميرا وتحليل الأخطاء</label>
+                    <label style="color:var(--text-gold);"><input type="checkbox" id="algo_${c.u}" ${p.showAlgo ? "checked" : ""} onchange="updateCashierPerm('${c.u}', 'showAlgo', this.checked)"> <i class="fas fa-shield-alt"></i> إظهار رمز التحقق</label>
+                </div>
+            `;
+        }).join("");
+    }
+
+    window.updateCashierPerm = async function(username, perm, value) {
+        let perms = await getPermissions();
+        if (!perms[username]) perms[username] = { canUseCamera: false, showAlgo: true };
+        perms[username][perm] = value;
+        await savePermissions(perms);
+        await addLog("تعديل صلاحيات", `${value ? "منح" : "سحب"} صلاحية ${perm === "canUseCamera" ? "الكاميرا" : "إظهار الرمز"} للمستخدم ${username}`);
+        if (currentUser && currentUser.u === username && currentUser.role === "cashier") {
+            showApp(currentUser);
+        }
+    };
+
+    async function renderErrorsList() {
+        let errors = await getErrors();
+        let container = document.getElementById("errorsList");
+        if (errors.length === 0) { container.innerHTML = "<p>لا توجد أخطاء مسجلة</p>"; return; }
+        container.innerHTML = errors.map(e => `
+            <div class="user-card">
+                <div><strong>${escapeHtml(e.problem)}</strong><br><small>الحل: ${escapeHtml(e.solution)}</small></div>
+                <button class="small-btn" onclick="deleteError('${e.id}')"><i class="fas fa-trash"></i></button>
+            </div>
+        `).join("");
+    }
+
+    async function addError() {
+        let problem = document.getElementById("errorProblem").value.trim();
+        let solution = document.getElementById("errorSolution").value.trim();
+        if (!problem || !solution) { alert("املأ الحقلين"); return; }
+        let errors = await getErrors();
+        let newId = Date.now().toString();
+        errors.push({ id: newId, problem, solution });
+        await saveErrors(errors);
+        document.getElementById("errorProblem").value = "";
+        document.getElementById("errorSolution").value = "";
+        await renderErrorsList();
+        await addLog("إضافة خطأ", `تم إضافة مشكلة: ${problem}`);
+        alert("تمت الإضافة");
+    }
+
+    window.deleteError = async function(id) {
+        let errors = await getErrors();
+        errors = errors.filter(e => e.id !== id);
+        await saveErrors(errors);
+        await renderErrorsList();
+        await addLog("حذف خطأ", `تم حذف مشكلة`);
+    };
+
+    async function initCamera() {
+        try {
+            if (currentStream) currentStream.getTracks().forEach(t => t.stop());
+            const constraints = { video: { facingMode: currentCamera } };
+            currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            const video = document.getElementById("video");
+            video.srcObject = currentStream;
+            video.classList.remove("hidden");
+        } catch (err) {
+            console.error(err);
+            alert("لا يمكن الوصول إلى الكاميرا. تأكد من منح الإذن.");
+        }
+    }
+
+    function switchCamera() {
+        currentCamera = currentCamera === 'environment' ? 'user' : 'environment';
+        initCamera();
+    }
+
+    function capturePhoto() {
+        const video = document.getElementById("video");
+        const canvas = document.getElementById("canvas");
+        const context = canvas.getContext("2d");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imgData = canvas.toDataURL("image/png");
+        const img = document.getElementById("capturedImage");
+        img.src = imgData;
+        img.classList.remove("hidden");
+        document.getElementById("analysisArea").classList.remove("hidden");
+        addLog("تصوير مستند", `${currentUser.u} قام بتصوير مستند`);
+        document.getElementById("ocrStatus").innerHTML = "<i class='fas fa-spinner fa-spin'></i> جاري تحليل الصورة...";
+        document.getElementById("analysisResult").classList.add("hidden");
+        
+        Tesseract.recognize(
+            imgData,
+            'eng+ara',
+            { logger: m => console.log(m) }
+        ).then(async ({ data: { text } }) => {
+            console.log("OCR result:", text);
+            document.getElementById("ocrStatus").innerHTML = "<i class='fas fa-check-circle'></i> تم التحليل";
+            await analyzeText(text);
+        }).catch(err => {
+            console.error(err);
+            document.getElementById("ocrStatus").innerHTML = "<i class='fas fa-exclamation-triangle'></i> فشل التحليل";
+            alert("حدث خطأ أثناء تحليل الصورة");
+        });
+    }
+
+    async function analyzeText(extractedText) {
+        const errors = await getErrors();
+        let matchedError = null;
+        for (let err of errors) {
+            if (extractedText.toLowerCase().includes(err.problem.toLowerCase())) {
+                matchedError = err;
+                break;
+            }
+        }
+        const resultDiv = document.getElementById("analysisResult");
+        if (matchedError) {
+            resultDiv.innerHTML = `<i class="fas fa-comment-dots"></i> <strong>المشكلة المطابقة:</strong> ${escapeHtml(matchedError.problem)}<br><strong>الحل:</strong> ${escapeHtml(matchedError.solution)}`;
+            addLog("تحليل تلقائي", `تم تحليل الصورة ووجد خطأ: ${matchedError.problem}`);
+        } else {
+            resultDiv.innerHTML = `<i class="fas fa-question-circle"></i> لم يتم العثور على مشكلة مطابقة في قاعدة البيانات. النص المستخرج: "${escapeHtml(extractedText.substring(0,100))}"<br>يمكنك إضافة هذه المشكلة من لوحة "الأخطاء والردود".`;
+            addLog("تحليل تلقائي", `لم يتم العثور على حل للنص: ${extractedText.substring(0,50)}`);
+        }
+        resultDiv.classList.remove("hidden");
+    }
+
+    async function changePassword() {
+        let old = document.getElementById("oldPass").value;
+        let newp = document.getElementById("newPass").value;
+        if (!old || !newp) { alert("املأ الحقول"); return; }
+        let users = await getUsers();
+        let user = users.find(u => u.u === currentUser.u);
+        if (!user || user.password !== old) { alert("كلمة المرور الحالية غير صحيحة"); return; }
+        if (newp.length < 3) { alert("كلمة المرور الجديدة قصيرة جداً"); return; }
+        user.password = newp;
+        await saveUsers(users);
+        sessionStorage.setItem("currentUser", JSON.stringify(user));
+        document.getElementById("oldPass").value = "";
+        document.getElementById("newPass").value = "";
+        await addLog("تغيير كلمة مرور", `${currentUser.u} غير كلمة المرور`);
+        alert("تم التغيير بنجاح");
+    }
+
+    function startAlgorithm() {
+        let d = new Date();
+        let day = String(d.getDate()).padStart(2,'0');
+        let month = String(d.getMonth()+1).padStart(2,'0');
+        let yearLast = String(d.getFullYear()).slice(-2);
+        let intermediate = yearLast + month + day;
+        let result = "";
+        for (let i=0; i<intermediate.length; i++) {
+            let dig = parseInt(intermediate[i]);
+            result += (i===3) ? dig : (dig+1)%10;
+        }
+        document.getElementById("output").innerText = result;
+    }
+
+    window.copyCode = function() {
+        let code = document.getElementById("output").innerText;
+        if (code && code !== "----") {
+            navigator.clipboard.writeText(code);
+            alert("✅ تم نسخ الرمز: " + code);
+            addLog("نسخ رمز", `تم نسخ الرمز بواسطة ${currentUser?.u}`);
+        } else alert("لا يوجد رمز");
+    };
+
+    async function renderLogs() {
+        let logs = await getLogs();
+        let container = document.getElementById("logsDiv");
+        if (logs.length === 0) { container.innerHTML = "<div>لا توجد سجلات</div>"; return; }
+        container.innerHTML = logs.map(l => `<div class="log-entry"><span>${l.time}</span> <span><strong>${l.action}</strong>: ${l.details}</span></div>`).join("");
+    }
+
+    async function clearLogs() {
+        if (confirm("مسح كل السجلات؟")) {
+            await database.ref('logs').remove();
+            await addLog("مسح السجل", "تم مسح جميع السجلات");
+            await renderLogs();
+        }
+    }
+
+    function logout() { 
+        if (currentStream) currentStream.getTracks().forEach(t => t.stop());
+        sessionStorage.clear(); 
+        location.reload(); 
+    }
+
+    function initTheme() {
+        let th = localStorage.getItem('busairi_theme');
+        if (th === "dark") document.body.classList.add("dark");
+        else document.body.classList.remove("dark");
+        document.querySelectorAll(".theme-toggle").forEach(btn => {
+            btn.innerHTML = document.body.classList.contains("dark") ? '<i class="fas fa-sun"></i> فاتح' : '<i class="fas fa-moon"></i> داكن';
+            btn.onclick = () => { document.body.classList.toggle("dark"); localStorage.setItem('busairi_theme', document.body.classList.contains("dark") ? "dark" : "light"); initTheme(); };
+        });
+    }
+
+    function escapeHtml(str) { return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]); }
+
+    window.addEventListener("DOMContentLoaded", async () => {
+        initTheme();
+        await initFirebaseData();
+        let stored = sessionStorage.getItem("currentUser");
+        if (stored) { try { showApp(JSON.parse(stored)); } catch(e) { sessionStorage.clear(); } }
+    });
+</script>
+</body>
+</html>
