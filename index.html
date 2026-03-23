@@ -3,10 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
-<title>بنك البسيري | نظام نقاط البيع الذكي</title>
+<title>بنك البسيري | نظام تحليل أخطاء POS الذكي</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 <script src="https://unpkg.com/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
+<!-- Firebase SDKs (compat version) -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 <style>
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Cairo', sans-serif; }
     :root {
@@ -60,7 +63,6 @@
     .btn-primary { background: var(--btn-primary-bg); color: var(--btn-primary-color); width: 100%; }
     .btn-secondary { background: rgba(255,255,240,0.18); border: 1px solid var(--text-gold-dark); color: var(--text-gold); width: 100%; }
     .small-btn { background: #FFB347; color: #1e2f47; padding: 0.5rem 1rem; }
-    /* Dropdown Navbar */
     .navbar-dropdown { margin: 1rem 0; position: relative; width: 100%; }
     .dropdown-select {
         width: 100%; padding: 0.8rem 1rem; background: var(--dropdown-bg);
@@ -125,7 +127,7 @@
 
 <div class="glass-card" id="loginBox">
     <button class="theme-toggle" id="themeToggle"><i class="fas fa-moon"></i> الوضع</button>
-    <div class="brand"><i class="fas fa-landmark"></i><h2>بنك البسيري الدولي</h2><p>نظام نقاط البيع الذكي</p></div>
+    <div class="brand"><i class="fas fa-landmark"></i><h2>بنك البسيري الدولي</h2><p>نظام تحليل أخطاء POS الذكي (سحابي)</p></div>
     <input type="text" id="loginUsername" class="input-field" placeholder="اسم المستخدم">
     <input type="password" id="loginPassword" class="input-field" placeholder="كلمة المرور">
     <button class="btn-primary" onclick="login()"><i class="fas fa-sign-in-alt"></i> دخول</button>
@@ -136,7 +138,6 @@
     <button class="theme-toggle" id="themeToggleApp"><i class="fas fa-moon"></i> الوضع</button>
     <div class="brand"><i class="fas fa-chart-line"></i><h2 id="appTitle">بسيري Pay</h2><div class="welcome-badge" id="userRoleBadge"></div></div>
 
-    <!-- Dropdown Navbar -->
     <div class="navbar-dropdown" id="navbarDropdownContainer" style="display: none;">
         <select id="navSelect" class="dropdown-select"></select>
     </div>
@@ -220,14 +221,85 @@
 </div>
 
 <script>
-    // ------------------ الإعدادات الأساسية ------------------
-    const USERS_KEY = "busairi_users_v8";
-    const LOGS_KEY = "busairi_logs";
-    const THEME_KEY = "busairi_theme";
-    const PERMISSIONS_KEY = "cashier_permissions";
-    const ERRORS_KEY = "busairi_errors_pos_full";
+    // ------------------ إعدادات Firebase (تم استبدالها بالقيم الصحيحة) ------------------
+    const firebaseConfig = {
+        apiKey: "AIzaSyD1MIhzfSag7_QpV5rE0lvOmm9oTuHeccA",
+        authDomain: "busairi-pos.firebaseapp.com",
+        databaseURL: "https://busairi-pos-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "busairi-pos",
+        storageBucket: "busairi-pos.firebasestorage.app",
+        messagingSenderId: "907002114739",
+        appId: "1:907002114739:web:25d7c99d4b69de8956b6c6",
+        measurementId: "G-DWQPS7HWTJ"
+    };
+    // تهيئة Firebase (compat)
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
 
-    // قائمة شاملة لأخطاء POS
+    // ------------------ متغيرات عامة ------------------
+    let currentUser = null;
+    let currentStream = null;
+    let currentCamera = 'environment';
+
+    // ------------------ دوال Firebase ------------------
+    async function getUsers() {
+        const snapshot = await database.ref('users').once('value');
+        const usersObj = snapshot.val() || {};
+        return Object.keys(usersObj).map(key => ({ ...usersObj[key], id: key }));
+    }
+
+    async function saveUsers(users) {
+        const usersObj = {};
+        users.forEach(user => {
+            usersObj[user.id || user.u] = user;
+        });
+        await database.ref('users').set(usersObj);
+    }
+
+    async function addLog(action, details) {
+        const logEntry = {
+            time: new Date().toLocaleString('ar-EG'),
+            action,
+            details
+        };
+        await database.ref('logs').push(logEntry);
+        if (document.getElementById("tabLogs").classList.contains("active")) renderLogs();
+    }
+
+    async function getLogs() {
+        const snapshot = await database.ref('logs').once('value');
+        const logsObj = snapshot.val() || {};
+        return Object.values(logsObj).reverse();
+    }
+
+    async function clearLogs() {
+        await database.ref('logs').remove();
+        addLog("مسح السجل", "تم مسح جميع السجلات");
+        renderLogs();
+    }
+
+    async function getPermissions() {
+        const snapshot = await database.ref('permissions').once('value');
+        return snapshot.val() || {};
+    }
+
+    async function savePermissions(perms) {
+        await database.ref('permissions').set(perms);
+    }
+
+    async function getErrors() {
+        const snapshot = await database.ref('errors').once('value');
+        const errorsObj = snapshot.val() || {};
+        return Object.values(errorsObj);
+    }
+
+    async function saveErrors(errors) {
+        const errorsObj = {};
+        errors.forEach(err => { errorsObj[err.id] = err; });
+        await database.ref('errors').set(errorsObj);
+    }
+
+    // ------------------ دوال إعداد البيانات الأولية ------------------
     const POS_ERRORS = [
         { problem: "Insufficient funds", solution: "لا يوجد رصيد كافٍ لدى العميل، يرجى إعلامه بتعبئة الرصيد" },
         { problem: "Card declined", solution: "البطاقة مرفوضة من البنك المصدر، يُرجى استخدام بطاقة أخرى" },
@@ -244,78 +316,56 @@
         { problem: "PIN tries exceeded", solution: "تم تجاوز عدد المحاولات المسموحة للرقم السري، البطاقة محظورة مؤقتاً" },
         { problem: "Invalid card", solution: "البطاقة غير صالحة أو تالفة، اطلب بطاقة بديلة" },
         { problem: "Merchant error", solution: "خطأ في إعدادات التاجر، تواصل مع الدعم الفني" },
-        { problem: "Declined by issuer", solution: "البنك المصدر رفض العملية، يرجى الاتصال بالبنك" },
-        { problem: "Timeout", solution: "انتهت المهلة، حاول مرة أخرى" },
-        { problem: "No response", solution: "لا استجابة من البنك، تحقق من الاتصال" }
+        { problem: "Declined by issuer", solution: "البنك المصدر رفض العملية، يرجى الاتصال بالبنك" }
     ];
 
-    function initData() {
-        if (!localStorage.getItem(USERS_KEY)) {
-            localStorage.setItem(USERS_KEY, JSON.stringify([
+    async function initFirebaseData() {
+        let users = await getUsers();
+        if (users.length === 0) {
+            const defaultUsers = [
                 { u: "admin", role: "admin", password: "admin123", lastLogin: "لم يسجل بعد" },
                 { u: "cashier1", role: "cashier", password: "1234", lastLogin: "لم يسجل بعد" },
                 { u: "user1", role: "user", password: "1234", lastLogin: "لم يسجل بعد" }
-            ]));
+            ];
+            await saveUsers(defaultUsers);
         }
-        if (!localStorage.getItem(PERMISSIONS_KEY)) {
-            localStorage.setItem(PERMISSIONS_KEY, JSON.stringify({
-                cashier1: { canUseCamera: true, showAlgo: true }
-            }));
-        }
-        if (!localStorage.getItem(ERRORS_KEY)) {
+        let errors = await getErrors();
+        if (errors.length === 0) {
             const errorsWithId = POS_ERRORS.map((e, idx) => ({ id: idx.toString(), problem: e.problem, solution: e.solution }));
-            localStorage.setItem(ERRORS_KEY, JSON.stringify(errorsWithId));
+            await saveErrors(errorsWithId);
         }
-        if (!localStorage.getItem(LOGS_KEY)) localStorage.setItem(LOGS_KEY, "[]");
-    }
-    initData();
-
-    function getUsers() { return JSON.parse(localStorage.getItem(USERS_KEY)); }
-    function saveUsers(u) { localStorage.setItem(USERS_KEY, JSON.stringify(u)); }
-    function getLogs() { return JSON.parse(localStorage.getItem(LOGS_KEY)); }
-    function saveLogs(l) { localStorage.setItem(LOGS_KEY, JSON.stringify(l)); }
-    function getPermissions() { return JSON.parse(localStorage.getItem(PERMISSIONS_KEY)); }
-    function savePermissions(p) { localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(p)); }
-    function getErrors() { return JSON.parse(localStorage.getItem(ERRORS_KEY)); }
-    function saveErrors(e) { localStorage.setItem(ERRORS_KEY, JSON.stringify(e)); }
-
-    function addLog(action, details) {
-        let logs = getLogs();
-        logs.unshift({ time: new Date().toLocaleString('ar-EG'), action, details });
-        if (logs.length > 200) logs.pop();
-        saveLogs(logs);
-        if (document.getElementById("tabLogs") && document.getElementById("tabLogs").classList.contains("active")) renderLogs();
+        let perms = await getPermissions();
+        if (Object.keys(perms).length === 0) {
+            await savePermissions({ cashier1: { canUseCamera: true, showAlgo: true } });
+        }
     }
 
-    let currentUser = null;
-    let currentStream = null;
-    let currentCamera = 'environment';
-
-    function login() {
+    // ------------------ دوال التطبيق الرئيسية ------------------
+    async function login() {
         let username = document.getElementById("loginUsername").value.trim();
         let password = document.getElementById("loginPassword").value;
         if (!username) { alert("أدخل اسم المستخدم"); return; }
-        let users = getUsers();
+        let users = await getUsers();
         let user = users.find(u => u.u === username);
         if (!user) {
             user = { u: username, role: "user", password: "1234", lastLogin: "لم يسجل بعد" };
             users.push(user);
-            saveUsers(users);
-            addLog("مستخدم جديد", `تم إنشاء ${username} بكلمة مرور 1234`);
+            await saveUsers(users);
+            await addLog("مستخدم جديد", `تم إنشاء ${username} بكلمة مرور 1234`);
         }
         if (user.password !== password) {
-            addLog("محاولة دخول فاشلة", `${username} - كلمة مرور خاطئة`);
+            await addLog("محاولة دخول فاشلة", `${username} - كلمة مرور خاطئة`);
             alert("كلمة المرور غير صحيحة");
             return;
         }
         user.lastLogin = new Date().toLocaleString('ar-EG');
-        saveUsers(users);
-        addLog("دخول ناجح", `${username} (${user.role})`);
+        await saveUsers(users);
+        await addLog("دخول ناجح", `${username} (${user.role})`);
         sessionStorage.setItem("currentUser", JSON.stringify(user));
         showApp(user);
     }
 
-    function showApp(user) {
+    async function showApp(user) {
         currentUser = user;
         document.getElementById("loginBox").classList.add("hidden");
         document.getElementById("appBox").classList.remove("hidden");
@@ -323,7 +373,6 @@
         document.getElementById("appTitle").innerHTML = user.role === "admin" ? '<i class="fas fa-crown"></i> لوحة المدير' : (user.role === "cashier" ? '<i class="fas fa-cash-register"></i> نظام الكاشير' : '<i class="fas fa-qrcode"></i> نظام نقاط البيع');
         document.getElementById("userRoleBadge").innerHTML = user.role === "admin" ? "👑 مدير النظام" : (user.role === "cashier" ? "🛒 كاشير" : "👤 مستخدم عادي");
 
-        // تحديد التبويبات المتاحة بناءً على الدور والصلاحيات
         let availableTabs = [
             { id: "tabAlgorithm", name: "رمز التحقق", icon: "fas fa-shield-alt" },
             { id: "tabChangePass", name: "تغيير كلمة السر", icon: "fas fa-key" }
@@ -338,14 +387,13 @@
                 { id: "tabCamera", name: "كاميرا (تجريبي)", icon: "fas fa-camera" }
             );
         } else if (user.role === "cashier") {
-            let perms = getPermissions()[user.u] || { canUseCamera: false, showAlgo: true };
-            if (perms.canUseCamera) {
+            let perms = await getPermissions();
+            let userPerms = perms[user.u] || { canUseCamera: false, showAlgo: true };
+            if (userPerms.canUseCamera) {
                 availableTabs.push({ id: "tabCamera", name: "تصوير الإشعار", icon: "fas fa-camera" });
             }
         }
-        // المستخدم العادي لا يحصل على أي تبويب إضافي
 
-        // بناء القائمة المنسدلة
         const navSelect = document.getElementById("navSelect");
         navSelect.innerHTML = "";
         availableTabs.forEach(tab => {
@@ -357,17 +405,15 @@
         document.getElementById("navbarDropdownContainer").style.display = "block";
         navSelect.onchange = (e) => switchTab(e.target.value);
 
-        // عرض أول تبويب
         if (availableTabs.length > 0) switchTab(availableTabs[0].id);
 
-        // إظهار/إخفاء أدوات الإدارة
         if (user.role === "admin") {
             document.getElementById("addUserForm").classList.remove("hidden");
             document.getElementById("addErrorForm").classList.remove("hidden");
-            renderUsersList();
-            renderLogs();
-            renderCashierPermissions();
-            renderErrorsList();
+            await renderUsersList();
+            await renderLogs();
+            await renderCashierPermissions();
+            await renderErrorsList();
         } else {
             document.getElementById("addUserForm").classList.add("hidden");
             document.getElementById("addErrorForm").classList.add("hidden");
@@ -375,19 +421,19 @@
 
         startAlgorithm();
 
-        // ضبط رؤية رمز التحقق للكاشير
         if (user.role === "cashier") {
-            let perms = getPermissions()[user.u] || { canUseCamera: false, showAlgo: true };
+            let perms = await getPermissions();
+            let userPerms = perms[user.u] || { canUseCamera: false, showAlgo: true };
             let outputDiv = document.getElementById("output");
             let copyBtn = document.getElementById("copyCodeBtn");
-            if (!perms.showAlgo) {
+            if (!userPerms.showAlgo) {
                 outputDiv.style.display = "none";
                 copyBtn.style.display = "none";
             } else {
                 outputDiv.style.display = "block";
                 copyBtn.style.display = "inline-block";
             }
-            if (perms.canUseCamera) initCamera();
+            if (userPerms.canUseCamera) initCamera();
             else if (currentStream) { currentStream.getTracks().forEach(t => t.stop()); document.getElementById("video").classList.add("hidden"); }
         } else {
             document.getElementById("output").style.display = "block";
@@ -402,8 +448,8 @@
         if (navSelect) navSelect.value = tabId;
     }
 
-    function renderUsersList() {
-        let users = getUsers();
+    async function renderUsersList() {
+        let users = await getUsers();
         let container = document.getElementById("usersDiv");
         container.innerHTML = users.map(u => `
             <div class="user-card">
@@ -413,50 +459,50 @@
         `).join("");
     }
 
-    function addUser() {
+    async function addUser() {
         let name = document.getElementById("newUserName").value.trim();
         let role = document.getElementById("newUserRole").value;
         let pass = document.getElementById("newUserPass").value.trim();
         if (!name) { alert("أدخل الاسم"); return; }
         if (!pass) pass = "1234";
-        let users = getUsers();
+        let users = await getUsers();
         if (users.find(u => u.u === name)) { alert("المستخدم موجود"); return; }
         users.push({ u: name, role: role, password: pass, lastLogin: "لم يسجل بعد" });
-        saveUsers(users);
+        await saveUsers(users);
         if (role === "cashier") {
-            let perms = getPermissions();
+            let perms = await getPermissions();
             perms[name] = { canUseCamera: false, showAlgo: true };
-            savePermissions(perms);
+            await savePermissions(perms);
         }
         document.getElementById("newUserName").value = "";
         document.getElementById("newUserPass").value = "";
-        renderUsersList();
-        renderCashierPermissions();
-        addLog("إضافة مستخدم", `تم إضافة ${name} (${role})`);
+        await renderUsersList();
+        await renderCashierPermissions();
+        await addLog("إضافة مستخدم", `تم إضافة ${name} (${role})`);
         alert(`✅ تم إضافة ${name} بكلمة مرور: ${pass}`);
     }
 
-    window.deleteUser = function(username) {
-        let users = getUsers();
+    window.deleteUser = async function(username) {
+        let users = await getUsers();
         let target = users.find(u => u.u === username);
         if (!target || target.role === "admin") { alert("لا يمكن حذف المدير"); return; }
         if (confirm(`حذف ${username} نهائياً؟`)) {
             users = users.filter(u => u.u !== username);
-            saveUsers(users);
-            let perms = getPermissions();
+            await saveUsers(users);
+            let perms = await getPermissions();
             delete perms[username];
-            savePermissions(perms);
-            renderUsersList();
-            renderCashierPermissions();
-            addLog("حذف مستخدم", `تم حذف ${username}`);
+            await savePermissions(perms);
+            await renderUsersList();
+            await renderCashierPermissions();
+            await addLog("حذف مستخدم", `تم حذف ${username}`);
             if (currentUser && currentUser.u === username) logout();
         }
     };
 
-    function renderCashierPermissions() {
-        let users = getUsers();
+    async function renderCashierPermissions() {
+        let users = await getUsers();
         let cashiers = users.filter(u => u.role === "cashier");
-        let perms = getPermissions();
+        let perms = await getPermissions();
         let container = document.getElementById("cashiersList");
         if (cashiers.length === 0) { container.innerHTML = "<p>لا يوجد كاشير</p>"; return; }
         container.innerHTML = cashiers.map(c => {
@@ -471,19 +517,19 @@
         }).join("");
     }
 
-    window.updateCashierPerm = function(username, perm, value) {
-        let perms = getPermissions();
+    window.updateCashierPerm = async function(username, perm, value) {
+        let perms = await getPermissions();
         if (!perms[username]) perms[username] = { canUseCamera: false, showAlgo: true };
         perms[username][perm] = value;
-        savePermissions(perms);
-        addLog("تعديل صلاحيات", `${value ? "منح" : "سحب"} صلاحية ${perm === "canUseCamera" ? "الكاميرا" : "إظهار الرمز"} للمستخدم ${username}`);
+        await savePermissions(perms);
+        await addLog("تعديل صلاحيات", `${value ? "منح" : "سحب"} صلاحية ${perm === "canUseCamera" ? "الكاميرا" : "إظهار الرمز"} للمستخدم ${username}`);
         if (currentUser && currentUser.u === username && currentUser.role === "cashier") {
-            showApp(currentUser); // إعادة تحميل الواجهة لتحديث شريط التنقل والكاميرا
+            showApp(currentUser);
         }
     };
 
-    function renderErrorsList() {
-        let errors = getErrors();
+    async function renderErrorsList() {
+        let errors = await getErrors();
         let container = document.getElementById("errorsList");
         if (errors.length === 0) { container.innerHTML = "<p>لا توجد أخطاء مسجلة</p>"; return; }
         container.innerHTML = errors.map(e => `
@@ -494,26 +540,27 @@
         `).join("");
     }
 
-    function addError() {
+    async function addError() {
         let problem = document.getElementById("errorProblem").value.trim();
         let solution = document.getElementById("errorSolution").value.trim();
         if (!problem || !solution) { alert("املأ الحقلين"); return; }
-        let errors = getErrors();
+        let errors = await getErrors();
         let newId = Date.now().toString();
         errors.push({ id: newId, problem, solution });
-        saveErrors(errors);
+        await saveErrors(errors);
         document.getElementById("errorProblem").value = "";
         document.getElementById("errorSolution").value = "";
-        renderErrorsList();
-        addLog("إضافة خطأ", `تم إضافة مشكلة: ${problem}`);
+        await renderErrorsList();
+        await addLog("إضافة خطأ", `تم إضافة مشكلة: ${problem}`);
         alert("تمت الإضافة");
     }
 
-    window.deleteError = function(id) {
-        let errors = getErrors().filter(e => e.id !== id);
-        saveErrors(errors);
-        renderErrorsList();
-        addLog("حذف خطأ", `تم حذف مشكلة`);
+    window.deleteError = async function(id) {
+        let errors = await getErrors();
+        errors = errors.filter(e => e.id !== id);
+        await saveErrors(errors);
+        await renderErrorsList();
+        await addLog("حذف خطأ", `تم حذف مشكلة`);
     };
 
     async function initCamera() {
@@ -555,10 +602,10 @@
             imgData,
             'eng+ara',
             { logger: m => console.log(m) }
-        ).then(({ data: { text } }) => {
+        ).then(async ({ data: { text } }) => {
             console.log("OCR result:", text);
             document.getElementById("ocrStatus").innerHTML = "<i class='fas fa-check-circle'></i> تم التحليل";
-            analyzeText(text);
+            await analyzeText(text);
         }).catch(err => {
             console.error(err);
             document.getElementById("ocrStatus").innerHTML = "<i class='fas fa-exclamation-triangle'></i> فشل التحليل";
@@ -566,8 +613,8 @@
         });
     }
 
-    function analyzeText(extractedText) {
-        const errors = getErrors();
+    async function analyzeText(extractedText) {
+        const errors = await getErrors();
         let matchedError = null;
         for (let err of errors) {
             if (extractedText.toLowerCase().includes(err.problem.toLowerCase())) {
@@ -586,20 +633,20 @@
         resultDiv.classList.remove("hidden");
     }
 
-    function changePassword() {
+    async function changePassword() {
         let old = document.getElementById("oldPass").value;
         let newp = document.getElementById("newPass").value;
         if (!old || !newp) { alert("املأ الحقول"); return; }
-        let users = getUsers();
+        let users = await getUsers();
         let user = users.find(u => u.u === currentUser.u);
         if (!user || user.password !== old) { alert("كلمة المرور الحالية غير صحيحة"); return; }
         if (newp.length < 3) { alert("كلمة المرور الجديدة قصيرة جداً"); return; }
         user.password = newp;
-        saveUsers(users);
+        await saveUsers(users);
         sessionStorage.setItem("currentUser", JSON.stringify(user));
         document.getElementById("oldPass").value = "";
         document.getElementById("newPass").value = "";
-        addLog("تغيير كلمة مرور", `${currentUser.u} غير كلمة المرور`);
+        await addLog("تغيير كلمة مرور", `${currentUser.u} غير كلمة المرور`);
         alert("تم التغيير بنجاح");
     }
 
@@ -626,18 +673,18 @@
         } else alert("لا يوجد رمز");
     };
 
-    function renderLogs() {
-        let logs = getLogs();
+    async function renderLogs() {
+        let logs = await getLogs();
         let container = document.getElementById("logsDiv");
         if (logs.length === 0) { container.innerHTML = "<div>لا توجد سجلات</div>"; return; }
         container.innerHTML = logs.map(l => `<div class="log-entry"><span>${l.time}</span> <span><strong>${l.action}</strong>: ${l.details}</span></div>`).join("");
     }
 
-    function clearLogs() {
+    async function clearLogs() {
         if (confirm("مسح كل السجلات؟")) {
-            saveLogs([]);
-            renderLogs();
-            addLog("مسح السجل", "تم مسح جميع السجلات");
+            await database.ref('logs').remove();
+            await addLog("مسح السجل", "تم مسح جميع السجلات");
+            await renderLogs();
         }
     }
 
@@ -648,25 +695,23 @@
     }
 
     function initTheme() {
-        let th = localStorage.getItem(THEME_KEY);
+        let th = localStorage.getItem('busairi_theme');
         if (th === "dark") document.body.classList.add("dark");
         else document.body.classList.remove("dark");
         document.querySelectorAll(".theme-toggle").forEach(btn => {
             btn.innerHTML = document.body.classList.contains("dark") ? '<i class="fas fa-sun"></i> فاتح' : '<i class="fas fa-moon"></i> داكن';
-            btn.onclick = () => { document.body.classList.toggle("dark"); localStorage.setItem(THEME_KEY, document.body.classList.contains("dark") ? "dark" : "light"); initTheme(); };
+            btn.onclick = () => { document.body.classList.toggle("dark"); localStorage.setItem('busairi_theme', document.body.classList.contains("dark") ? "dark" : "light"); initTheme(); };
         });
     }
 
     function escapeHtml(str) { return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]); }
 
-    window.addEventListener("DOMContentLoaded", () => {
+    window.addEventListener("DOMContentLoaded", async () => {
         initTheme();
+        await initFirebaseData();
         let stored = sessionStorage.getItem("currentUser");
         if (stored) { try { showApp(JSON.parse(stored)); } catch(e) { sessionStorage.clear(); } }
     });
-    window.login = login; window.addUser = addUser; window.changePassword = changePassword;
-    window.clearLogs = clearLogs; window.addError = addError; window.capturePhoto = capturePhoto;
-    window.switchCamera = switchCamera;
 </script>
 </body>
 </html>
