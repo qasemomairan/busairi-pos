@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تطبيق الملاحظات - Supabase</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .note-form {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #2563eb;
+        }
+        .notes-list {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 10px;
+        }
+        .note-item {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .note-item:last-child {
+            border-bottom: none;
+        }
+        .note-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .note-date {
+            font-size: 12px;
+            color: #888;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+            padding: 20px;
+        }
+        .error {
+            color: red;
+            text-align: center;
+            padding: 10px;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>📝 ملاحظاتي</h1>
+
+    <div class="note-form">
+        <input type="text" id="noteTitle" placeholder="أدخل عنوان الملاحظة..." autocomplete="off">
+        <button id="addNoteBtn">➕ إضافة ملاحظة</button>
+    </div>
+
+    <div class="notes-list" id="notesContainer">
+        <div class="loading">جاري تحميل الملاحظات...</div>
+    </div>
+
+    <script>
+        // ------------------------------
+        // 1. تهيئة عميل Supabase (باستخدام بياناتك)
+        // ------------------------------
+        const SUPABASE_URL = 'https://ochnsppkbaqnjusacnzq.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9jaG5zcHBrYmFxbmp1c2FjbnpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzMTg5NTQsImV4cCI6MjA4OTg5NDk1NH0.TrEtjR8rPzT_nS-1bTg0rLHQO5YgizsolZ4KJ_9kHEI';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // ------------------------------
+        // 2. دالة لجلب وعرض الملاحظات
+        // ------------------------------
+        async function loadNotes() {
+            const container = document.getElementById('notesContainer');
+            container.innerHTML = '<div class="loading">جاري تحميل الملاحظات...</div>';
+
+            const { data, error } = await supabase
+                .from('notes')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.error('خطأ في جلب البيانات:', error);
+                container.innerHTML = `<div class="error">حدث خطأ: ${error.message}</div>`;
+                return;
+            }
+
+            if (!data || data.length === 0) {
+                container.innerHTML = '<div class="loading">لا توجد ملاحظات. أضف أول ملاحظة! 🎉</div>';
+                return;
+            }
+
+            container.innerHTML = data.map(note => `
+                <div class="note-item">
+                    <div class="note-title">${escapeHtml(note.title)}</div>
+                    <div class="note-date">${formatDate(note.created_at)}</div>
+                </div>
+            `).join('');
+        }
+
+        // ------------------------------
+        // 3. دالة لإضافة ملاحظة جديدة
+        // ------------------------------
+        async function addNote(title) {
+            if (!title.trim()) {
+                alert('الرجاء إدخال نص الملاحظة');
+                return false;
+            }
+
+            const { error } = await supabase
+                .from('notes')
+                .insert([{ title: title.trim() }]);
+
+            if (error) {
+                console.error('خطأ في الإضافة:', error);
+                alert('فشلت إضافة الملاحظة: ' + error.message);
+                return false;
+            }
+
+            await loadNotes();
+            return true;
+        }
+
+        // ------------------------------
+        // 4. وظائف مساعدة
+        // ------------------------------
+        function escapeHtml(str) {
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '';
+            const date = new Date(dateString);
+            return date.toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' });
+        }
+
+        // ------------------------------
+        // 5. ربط الأحداث
+        // ------------------------------
+        document.getElementById('addNoteBtn').addEventListener('click', async () => {
+            const input = document.getElementById('noteTitle');
+            const title = input.value;
+            await addNote(title);
+            input.value = '';
+            input.focus();
+        });
+
+        document.getElementById('noteTitle').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('addNoteBtn').click();
+            }
+        });
+
+        // ------------------------------
+        // 6. تحميل البيانات عند بدء الصفحة
+        // ------------------------------
+        loadNotes();
+    </script>
+</body>
+</html>
