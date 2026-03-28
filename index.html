@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>اختبار Supabase - تشخيص الأخطاء</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1, h2 { color: #333; text-align: center; }
+        .card {
+            background: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .note-form input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-left: 10px;
+        }
+        button:hover { background-color: #2563eb; }
+        .error-log {
+            background-color: #fee;
+            border-right: 4px solid #f00;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+            color: #c00;
+        }
+        .success-log {
+            background-color: #efe;
+            border-right: 4px solid #0a0;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+        }
+        .notes-list {
+            background: white;
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 10px;
+        }
+        .note-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .loading { text-align: center; color: #666; padding: 20px; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>🛠️ اختبار اتصال Supabase</h1>
+
+    <div class="card">
+        <h2>📡 معلومات الاتصال</h2>
+        <p><strong>الرابط (URL):</strong> <code id="url_display">https://ochnsppkbaqnjusacnzq.supabase.co</code></p>
+        <p><strong>المفتاح العام (Anon Key):</strong> <code id="key_display">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...</code> (يبدأ بـ eyJh)</p>
+        <button id="testConnBtn">🔍 اختبار الاتصال</button>
+        <div id="connectionResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>📝 إضافة ملاحظة جديدة</h2>
+        <div class="note-form">
+            <input type="text" id="noteTitle" placeholder="أدخل عنوان الملاحظة..." autocomplete="off">
+            <button id="addNoteBtn">➕ إضافة</button>
+        </div>
+        <div id="addResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>📋 قائمة الملاحظات</h2>
+        <button id="refreshBtn">🔄 تحديث القائمة</button>
+        <div id="notesContainer" class="notes-list">
+            <div class="loading">جاري تحميل الملاحظات...</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>📜 سجل الأخطاء والرسائل</h2>
+        <div id="errorLog" class="error-log">(ستظهر الأخطاء هنا)</div>
+        <button id="clearLogBtn">🗑️ مسح السجل</button>
+    </div>
+
+    <script>
+        // ------------------------------
+        // 1. بيانات الاتصال
+        // ------------------------------
+        const SUPABASE_URL = 'https://ochnsppkbaqnjusacnzq.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9jaG5zcHBrYmFxbmp1c2FjbnpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzMTg5NTQsImV4cCI6MjA4OTg5NDk1NH0.TrEtjR8rPzT_nS-1bTg0rLHQO5YgizsolZ4KJ_9kHEI';
+
+        // تهيئة العميل
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // ------------------------------
+        // 2. دوال لإدارة السجل
+        // ------------------------------
+        function addLog(message, isError = true) {
+            const logDiv = document.getElementById('errorLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.style.borderBottom = '1px solid #ccc';
+            logEntry.style.padding = '5px 0';
+            logEntry.style.fontFamily = 'monospace';
+            logEntry.style.fontSize = '12px';
+            if (isError) {
+                logEntry.style.color = '#c00';
+                logEntry.innerHTML = `[${timestamp}] ❌ ${message}`;
+            } else {
+                logEntry.style.color = '#0a0';
+                logEntry.innerHTML = `[${timestamp}] ✅ ${message}`;
+            }
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            // أيضاً نسجل في وحدة التحكم
+            if (isError) console.error(message);
+            else console.log(message);
+        }
+
+        function clearLog() {
+            document.getElementById('errorLog').innerHTML = '(تم مسح السجل)';
+        }
+
+        // ------------------------------
+        // 3. اختبار الاتصال (GET)
+        // ------------------------------
+        async function testConnection() {
+            const resultDiv = document.getElementById('connectionResult');
+            resultDiv.innerHTML = '<div class="loading">جارٍ الاختبار...</div>';
+            addLog('بدء اختبار الاتصال', false);
+
+            try {
+                // محاولة جلب أي سجل (حد أقصى 1)
+                const { data, error, status } = await supabase
+                    .from('notes')
+                    .select('*')
+                    .limit(1);
+
+                if (error) {
+                    let msg = `فشل الاتصال: ${error.message} (status: ${status})`;
+                    if (error.code === 'PGRST301') msg += ' - ربما الجدول "notes" غير موجود';
+                    if (error.message.includes('permission denied')) msg += ' - خطأ في RLS: لا توجد صلاحيات للقراءة';
+                    if (error.message.includes('relation')) msg += ' - الجدول غير موجود في قاعدة البيانات';
+                    addLog(msg);
+                    resultDiv.innerHTML = `<div class="error-log">${msg}</div>`;
+                } else {
+                    addLog(`الاتصال ناجح! عدد السجلات الموجودة: ${data.length}`, false);
+                    resultDiv.innerHTML = `<div class="success-log">✅ الاتصال ناجح! العدد: ${data.length}</div>`;
+                }
+            } catch (err) {
+                addLog(`استثناء غير متوقع: ${err.message}`);
+                resultDiv.innerHTML = `<div class="error-log">استثناء: ${err.message}</div>`;
+            }
+        }
+
+        // ------------------------------
+        // 4. جلب وعرض الملاحظات (مع عرض الأخطاء)
+        // ------------------------------
+        async function loadNotes() {
+            const container = document.getElementById('notesContainer');
+            container.innerHTML = '<div class="loading">جاري تحميل الملاحظات...</div>';
+            addLog('محاولة جلب الملاحظات...', false);
+
+            try {
+                const { data, error, status } = await supabase
+                    .from('notes')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (error) {
+                    let msg = `خطأ في جلب البيانات: ${error.message} (status: ${status})`;
+                    if (error.code === '42P01') msg += ' - الجدول "notes" غير موجود. تأكد من إنشائه في Supabase.';
+                    if (error.message.includes('permission denied')) msg += ' - RLS يمنع القراءة. أنشئ سياسة SELECT أو عطّل RLS مؤقتاً.';
+                    addLog(msg);
+                    container.innerHTML = `<div class="error-log">${msg}</div>`;
+                    return;
+                }
+
+                if (!data || data.length === 0) {
+                    addLog('لا توجد ملاحظات', false);
+                    container.innerHTML = '<div class="loading">لا توجد ملاحظات. أضف أول ملاحظة!</div>';
+                    return;
+                }
+
+                addLog(`تم جلب ${data.length} ملاحظة بنجاح`, false);
+                container.innerHTML = data.map(note => `
+                    <div class="note-item">
+                        <strong>${escapeHtml(note.title)}</strong><br>
+                        <small>${formatDate(note.created_at)}</small>
+                    </div>
+                `).join('');
+            } catch (err) {
+                addLog(`استثناء أثناء جلب الملاحظات: ${err.message}`);
+                container.innerHTML = `<div class="error-log">استثناء: ${err.message}</div>`;
+            }
+        }
+
+        // ------------------------------
+        // 5. إضافة ملاحظة (مع عرض الأخطاء)
+        // ------------------------------
+        async function addNote(title) {
+            const resultDiv = document.getElementById('addResult');
+            if (!title.trim()) {
+                const msg = 'الرجاء إدخال نص الملاحظة';
+                addLog(msg);
+                resultDiv.innerHTML = `<div class="error-log">${msg}</div>`;
+                return false;
+            }
+
+            resultDiv.innerHTML = '<div class="loading">جاري الإضافة...</div>';
+            addLog(`محاولة إضافة: "${title.trim()}"`, false);
+
+            try {
+                const { data, error, status } = await supabase
+                    .from('notes')
+                    .insert([{ title: title.trim() }])
+                    .select();
+
+                if (error) {
+                    let msg = `فشلت الإضافة: ${error.message} (status: ${status})`;
+                    if (error.message.includes('permission denied')) msg += ' - RLS يمنع الإدراج. أنشئ سياسة INSERT أو عطّل RLS.';
+                    if (error.code === '42P01') msg += ' - الجدول "notes" غير موجود.';
+                    addLog(msg);
+                    resultDiv.innerHTML = `<div class="error-log">${msg}</div>`;
+                    return false;
+                }
+
+                addLog(`تمت الإضافة بنجاح!`, false);
+                resultDiv.innerHTML = `<div class="success-log">✅ تمت الإضافة بنجاح!</div>`;
+                await loadNotes(); // تحديث القائمة
+                return true;
+            } catch (err) {
+                addLog(`استثناء أثناء الإضافة: ${err.message}`);
+                resultDiv.innerHTML = `<div class="error-log">استثناء: ${err.message}</div>`;
+                return false;
+            }
+        }
+
+        // ------------------------------
+        // 6. وظائف مساعدة
+        // ------------------------------
+        function escapeHtml(str) {
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '';
+            const date = new Date(dateString);
+            return date.toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' });
+        }
+
+        // ------------------------------
+        // 7. ربط الأحداث
+        // ------------------------------
+        document.getElementById('testConnBtn').addEventListener('click', testConnection);
+        document.getElementById('refreshBtn').addEventListener('click', loadNotes);
+        document.getElementById('clearLogBtn').addEventListener('click', clearLog);
+        document.getElementById('addNoteBtn').addEventListener('click', async () => {
+            const input = document.getElementById('noteTitle');
+            const title = input.value;
+            await addNote(title);
+            input.value = '';
+            input.focus();
+        });
+        document.getElementById('noteTitle').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') document.getElementById('addNoteBtn').click();
+        });
+
+        // ------------------------------
+        // 8. تحميل أولي
+        // ------------------------------
+        loadNotes();
+        // عرض معلومات الاتصال
+        document.getElementById('url_display').textContent = SUPABASE_URL;
+        document.getElementById('key_display').textContent = SUPABASE_ANON_KEY.substring(0, 20) + '...';
+    </script>
+</body>
+</html>
